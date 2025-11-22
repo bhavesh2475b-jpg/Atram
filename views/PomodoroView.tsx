@@ -5,6 +5,9 @@ import { Play, Pause, RotateCcw, Coffee, Brain, Armchair, Settings, X, BarChart3
 import { playNotificationSound } from '../utils/sound';
 import { vibrate, HapticPatterns } from '../utils/haptics';
 
+// Short silent MP3 to trigger Media Session
+const SILENT_AUDIO = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTSVMAAAAPAAADTGF2ZjU4LjIwLjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////wAAAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAA';
+
 export const PomodoroView: React.FC = () => {
   // --- STATE INITIALIZATION ---
   const [durations, setDurations] = useState<Record<PomodoroMode, number>>(() => {
@@ -42,8 +45,22 @@ export const PomodoroView: React.FC = () => {
   
   // Ref to track the end timestamp for background accuracy
   const endTimeRef = useRef<number | null>(null);
+  
+  // Ref for background audio
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // --- PERSISTENCE & RESTORATION LOGIC ---
+
+  // Setup Audio Element for Background Persistence / Live Activity
+  useEffect(() => {
+    const audio = new Audio(SILENT_AUDIO);
+    audio.loop = true;
+    audioRef.current = audio;
+    return () => {
+      audio.pause();
+      audioRef.current = null;
+    };
+  }, []);
 
   // Restore Timer State on Mount
   useEffect(() => {
@@ -148,9 +165,6 @@ export const PomodoroView: React.FC = () => {
       vibrate(HapticPatterns.success);
       
       if (currentMode === PomodoroMode.FOCUS) {
-          // Log the session using the configured duration
-          // Note: We use durations state, but if restored from background, strictly we should use the duration from when it started.
-          // For simplicity, we assume settings haven't changed mid-timer.
           const mins = durations[PomodoroMode.FOCUS]; 
           logSession(mins, currentMode, taskId);
           setCycle(c => c < cyclesBeforeLongBreak ? c + 1 : 1);
@@ -181,6 +195,59 @@ export const PomodoroView: React.FC = () => {
 
     return () => clearInterval(interval);
   }, [isActive, mode, cycle, selectedTaskId, durations, cyclesBeforeLongBreak]);
+
+  // --- LIVE ACTIVITY / MEDIA SESSION LOGIC ---
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  // Update Media Session Metadata (Android Lock Screen / Notification)
+  useEffect(() => {
+    const title = `${formatTime(timeLeft)} - ${mode}`;
+    
+    // Update Browser Title (Recent Apps)
+    document.title = isActive ? title : 'ChronoFlow';
+
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: title,
+            artist: isActive ? 'Focusing' : 'Paused',
+            album: 'ChronoFlow',
+            artwork: [
+                { src: 'https://cdn-icons-png.flaticon.com/512/3858/3858668.png', sizes: '512x512', type: 'image/png' }
+            ]
+        });
+
+        // Map Lock Screen Controls
+        navigator.mediaSession.setActionHandler('play', () => {
+            // Calculate new target since we are resuming
+            if (!isActive && timeLeft > 0) {
+                 const target = Date.now() + (timeLeft * 1000);
+                 endTimeRef.current = target;
+                 setIsActive(true);
+            }
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+            setIsActive(false);
+            endTimeRef.current = null;
+        });
+        
+        // Optional: Add 'Next Track' to skip?
+        // navigator.mediaSession.setActionHandler('nexttrack', () => { ... });
+    }
+  }, [timeLeft, isActive, mode]);
+
+  // Handle Background Audio Playback
+  useEffect(() => {
+      if (isActive) {
+          // User interaction has already happened (Start button), so play should work
+          audioRef.current?.play().catch(e => console.warn("Background audio prevented:", e));
+      } else {
+          audioRef.current?.pause();
+      }
+  }, [isActive]);
 
 
   // --- CONTROLS ---
@@ -237,12 +304,6 @@ export const PomodoroView: React.FC = () => {
       }
   };
 
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
-
   const config = {
     [PomodoroMode.FOCUS]: { color: 'bg-primaryContainer', icon: Brain },
     [PomodoroMode.SHORT_BREAK]: { color: 'bg-emerald-800', icon: Coffee },
@@ -285,7 +346,7 @@ export const PomodoroView: React.FC = () => {
   const selectedTask = availableTasks.find(t => t.id === selectedTaskId);
 
   return (
-    <div className="min-h-full w-full max-w-md mx-auto p-6 flex flex-col items-center animate-in zoom-in-95 duration-500 relative pb-32">
+    <div className="min-h-full w-full max-w-md mx-auto p-6 flex flex-col items-center animate-in zoom-in-95 duration-500 relative pb-48">
       
       {/* Header Controls */}
       <div className="w-full flex justify-between items-center mb-4 shrink-0">
