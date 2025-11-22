@@ -1,18 +1,31 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Alarm, SOUND_OPTIONS, AppSettings } from '../types';
-import { Plus, Trash2, BellOff, Music, Calendar as CalendarIcon, Repeat, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, BellOff, Music, Calendar as CalendarIcon, Repeat, ChevronLeft, ChevronRight, Palette } from 'lucide-react';
 import { playSound } from '../utils/sound';
 import { vibrate, HapticPatterns } from '../utils/haptics';
 
 interface AlarmViewProps {
     settings: AppSettings;
+    onEditModeChange?: (isEditing: boolean) => void;
 }
 
-export const AlarmView: React.FC<AlarmViewProps> = ({ settings }) => {
+const ALARM_COLORS = ['default', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink'];
+
+const COLOR_STYLES: Record<string, { bg: string, text: string, indicator: string }> = {
+    default: { bg: 'bg-surfaceContainer', text: 'text-onSurface', indicator: 'bg-primary' },
+    red: { bg: 'bg-rose-900/40', text: 'text-rose-100', indicator: 'bg-rose-500' },
+    orange: { bg: 'bg-orange-900/40', text: 'text-orange-100', indicator: 'bg-orange-500' },
+    yellow: { bg: 'bg-amber-900/40', text: 'text-amber-100', indicator: 'bg-amber-500' },
+    green: { bg: 'bg-emerald-900/40', text: 'text-emerald-100', indicator: 'bg-emerald-500' },
+    blue: { bg: 'bg-blue-900/40', text: 'text-blue-100', indicator: 'bg-blue-500' },
+    purple: { bg: 'bg-violet-900/40', text: 'text-violet-100', indicator: 'bg-violet-500' },
+    pink: { bg: 'bg-fuchsia-900/40', text: 'text-fuchsia-100', indicator: 'bg-fuchsia-500' },
+};
+
+export const AlarmView: React.FC<AlarmViewProps> = ({ settings, onEditModeChange }) => {
   const [alarms, setAlarms] = useState<Alarm[]>([
-    { id: '1', time: '07:00', label: 'Morning Routine', enabled: true, days: [1, 2, 3, 4, 5], soundId: 'chime' },
-    { id: '2', time: '08:30', label: 'Standup Meeting', enabled: false, days: [1, 2, 3, 4, 5], soundId: 'digital' }
+    { id: '1', time: '07:00', label: 'Morning Routine', enabled: true, days: [1, 2, 3, 4, 5], soundId: 'chime', color: 'orange' },
+    { id: '2', time: '08:30', label: 'Standup Meeting', enabled: false, days: [1, 2, 3, 4, 5], soundId: 'digital', color: 'blue' }
   ]);
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -20,6 +33,7 @@ export const AlarmView: React.FC<AlarmViewProps> = ({ settings }) => {
   // New/Edit Alarm State
   const [newTime, setNewTime] = useState('09:00');
   const [newLabel, setNewLabel] = useState('');
+  const [newColor, setNewColor] = useState('default');
   
   // Schedule State
   const [scheduleMode, setScheduleMode] = useState<'weekly' | 'date'>('weekly');
@@ -36,6 +50,16 @@ export const AlarmView: React.FC<AlarmViewProps> = ({ settings }) => {
   const [swipeId, setSwipeId] = useState<string | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const startX = useRef(0);
+
+  // Notify parent about edit mode to toggle Nav visibility
+  useEffect(() => {
+    if (onEditModeChange) {
+      onEditModeChange(showAdd);
+    }
+    return () => {
+        if (onEditModeChange) onEditModeChange(false);
+    };
+  }, [showAdd, onEditModeChange]);
 
   useEffect(() => {
     const checkAlarms = setInterval(() => {
@@ -125,6 +149,7 @@ export const AlarmView: React.FC<AlarmViewProps> = ({ settings }) => {
     setNewTime(alarm.time);
     setNewLabel(alarm.label);
     setSelectedSound(alarm.soundId);
+    setNewColor(alarm.color || 'default');
     
     if (alarm.customSoundUrl && alarm.customSoundName) {
         setCustomSound({ name: alarm.customSoundName, url: alarm.customSoundUrl });
@@ -151,6 +176,7 @@ export const AlarmView: React.FC<AlarmViewProps> = ({ settings }) => {
       setSpecificDate(undefined);
       setScheduleMode('weekly');
       setSelectedSound('digital');
+      setNewColor('default');
       setCustomSound(null);
       setShowAdd(true);
   };
@@ -224,7 +250,8 @@ export const AlarmView: React.FC<AlarmViewProps> = ({ settings }) => {
           specificDate: scheduleMode === 'date' ? specificDate : undefined,
           soundId: selectedSound,
           customSoundName: selectedSound === 'custom' ? customSound?.name : undefined,
-          customSoundUrl: selectedSound === 'custom' ? customSound?.url : undefined
+          customSoundUrl: selectedSound === 'custom' ? customSound?.url : undefined,
+          color: newColor
       };
 
       if (editingId) {
@@ -270,9 +297,15 @@ export const AlarmView: React.FC<AlarmViewProps> = ({ settings }) => {
         <span className="text-onSurface/50 text-sm font-medium bg-surfaceContainer px-3 py-1 rounded-full">{alarms.filter(a => a.enabled).length} Active</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-32 space-y-4 overflow-x-hidden">
+      <div className="flex-1 overflow-y-auto no-scrollbar pb-56 space-y-4 overflow-x-hidden">
         {alarms.map(alarm => {
             const isSwiping = swipeId === alarm.id;
+            const colorStyle = COLOR_STYLES[alarm.color || 'default'] || COLOR_STYLES.default;
+            const cardBg = alarm.enabled ? colorStyle.bg : 'bg-surfaceContainer/30';
+            const textColor = alarm.enabled ? colorStyle.text : 'text-onSurface/40';
+            const indicatorColor = alarm.enabled ? colorStyle.indicator : 'bg-onSurface/10';
+            const iconColor = alarm.enabled ? colorStyle.text : 'text-onSurface/40';
+
             return (
             <div key={alarm.id} className="relative">
                 <div className="absolute inset-0 bg-error rounded-[2rem] flex items-center justify-end px-8 mb-4">
@@ -285,26 +318,26 @@ export const AlarmView: React.FC<AlarmViewProps> = ({ settings }) => {
                     onTouchMove={handleTouchMove}
                     onTouchEnd={handleTouchEnd}
                     style={{ transform: isSwiping ? `translateX(${swipeOffset}px)` : 'translateX(0)' }}
-                    className={`group relative z-10 overflow-hidden rounded-[2rem] p-6 transition-all duration-300 ease-out hover:shadow-lg cursor-pointer active:scale-[0.98] mb-4 ${alarm.enabled ? 'bg-surfaceContainer' : 'bg-surfaceContainer/30'}`}
+                    className={`group relative z-10 overflow-hidden rounded-[2rem] p-6 transition-all duration-300 ease-out hover:shadow-lg cursor-pointer active:scale-[0.98] mb-4 ${cardBg}`}
                 >
                     <div className="flex justify-between items-center">
                         <div className="flex flex-col">
-                            <span className={`text-5xl sm:text-6xl font-sans font-medium tracking-tight transition-colors ${alarm.enabled ? 'text-onSurface' : 'text-onSurface/40'}`}>
+                            <span className={`text-5xl sm:text-6xl font-sans font-medium tracking-tight transition-colors ${textColor}`}>
                                 {formatDisplayTime(alarm.time)}
                             </span>
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
-                            <span className="text-onSurface font-medium text-base">{alarm.label}</span>
-                            <div className="flex items-center gap-1 text-onSurface/60 text-sm">
-                                {alarm.soundId !== 'digital' && <Music size={14} className="text-primary" />}
+                            <span className={`font-medium text-base ${textColor}`}>{alarm.label}</span>
+                            <div className={`flex items-center gap-1 text-sm opacity-80 ${textColor}`}>
+                                {alarm.soundId !== 'digital' && <Music size={14} className="opacity-80" />}
                                 <span>•</span>
-                                <span className={alarm.specificDate ? 'text-primary font-bold' : ''}>{getRepeatLabel(alarm)}</span>
+                                <span className={alarm.specificDate ? 'font-bold' : ''}>{getRepeatLabel(alarm)}</span>
                             </div>
                             </div>
                         </div>
                         
                         <button 
                             onClick={(e) => toggleAlarm(e, alarm.id)}
-                            className={`w-16 h-9 sm:w-20 sm:h-10 rounded-full relative transition-colors duration-300 shrink-0 ${alarm.enabled ? 'bg-primary' : 'bg-onSurface/10'}`}
+                            className={`w-16 h-9 sm:w-20 sm:h-10 rounded-full relative transition-colors duration-300 shrink-0 ${indicatorColor}`}
                         >
                             <div className={`absolute top-1 h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-white shadow-md transition-all duration-300 cubic-bezier(0.34, 1.56, 0.64, 1) ${alarm.enabled ? 'left-[calc(100%-2rem)] sm:left-11' : 'left-1'}`} />
                         </button>
@@ -312,7 +345,7 @@ export const AlarmView: React.FC<AlarmViewProps> = ({ settings }) => {
                     
                     <button 
                         onClick={(e) => { e.stopPropagation(); deleteAlarm(alarm.id); }}
-                        className="absolute top-4 right-4 p-3 rounded-full text-onSurface/20 hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all duration-300 z-20 hidden sm:block"
+                        className={`absolute top-4 right-4 p-3 rounded-full hover:bg-white/10 transition-all duration-300 z-20 hidden sm:block opacity-0 group-hover:opacity-100 ${textColor}`}
                     >
                         <Trash2 size={20} />
                     </button>
@@ -329,16 +362,18 @@ export const AlarmView: React.FC<AlarmViewProps> = ({ settings }) => {
         )}
       </div>
 
-      <button 
-        onClick={openNewModal}
-        className="fixed bottom-24 right-6 sm:right-auto sm:left-1/2 sm:-ml-10 w-20 h-20 rounded-[2rem] bg-primaryContainer text-onPrimaryContainer shadow-xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-300 z-40 group"
-      >
-        <Plus size={36} className="group-hover:rotate-90 transition-transform duration-300" />
-      </button>
+      {!showAdd && (
+          <button 
+            onClick={openNewModal}
+            className="fixed bottom-32 right-6 sm:right-auto sm:left-1/2 sm:-ml-10 w-20 h-20 rounded-[2rem] bg-primaryContainer text-onPrimaryContainer shadow-xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-300 z-40 group"
+          >
+            <Plus size={36} className="group-hover:rotate-90 transition-transform duration-300" />
+          </button>
+      )}
 
       {/* Add/Edit Alarm Modal */}
       {showAdd && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-end sm:items-center justify-center sm:p-4">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-end sm:items-center justify-center sm:p-4">
               <div className="bg-surface w-full max-w-md sm:rounded-[2.5rem] rounded-t-[2.5rem] p-6 sm:p-8 animate-in slide-in-from-bottom-20 duration-500 shadow-2xl max-h-[90vh] overflow-y-auto no-scrollbar">
                   <h3 className="text-3xl text-onSurface font-medium mb-6">{editingId ? 'Edit Alarm' : 'New Alarm'}</h3>
                   
@@ -361,6 +396,25 @@ export const AlarmView: React.FC<AlarmViewProps> = ({ settings }) => {
                         onChange={(e) => setNewLabel(e.target.value)}
                         className="w-full bg-surfaceContainer text-onSurface p-4 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-primary transition-all"
                       />
+
+                      {/* Color Picker */}
+                      <div>
+                         <label className="text-xs text-onSurface/50 uppercase tracking-wider font-bold ml-1 mb-2 block">Color</label>
+                         <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+                            {ALARM_COLORS.map(color => {
+                                const style = COLOR_STYLES[color];
+                                return (
+                                    <button
+                                        key={color}
+                                        onClick={() => { setNewColor(color); vibrate(HapticPatterns.light); }}
+                                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${style.bg} ${newColor === color ? `ring-2 ${style.indicator} scale-110` : 'opacity-70'}`}
+                                    >
+                                        {newColor === color && <div className={`w-3 h-3 rounded-full ${style.indicator}`} />}
+                                    </button>
+                                );
+                            })}
+                         </div>
+                      </div>
 
                       {/* Schedule Mode Tabs */}
                       <div className="bg-surfaceContainer p-1 rounded-[1.5rem] flex">
@@ -460,7 +514,7 @@ export const AlarmView: React.FC<AlarmViewProps> = ({ settings }) => {
                       </div>
                   </div>
 
-                  <div className="flex gap-4 mt-8">
+                  <div className="flex gap-4 mt-8 mb-safe">
                       <button onClick={() => setShowAdd(false)} className="flex-1 py-4 rounded-2xl text-primary font-medium hover:bg-surfaceContainer transition-colors">
                           Cancel
                       </button>

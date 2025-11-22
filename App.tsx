@@ -16,12 +16,20 @@ const App: React.FC = () => {
       const saved = localStorage.getItem('app_settings');
       return saved ? JSON.parse(saved) : { is24Hour: true, volume: 1.0 };
   });
+  
+  // State to hide navigation bar when a full-screen modal is open (e.g., Edit Alarm)
+  const [isNavHidden, setIsNavHidden] = useState(false);
 
   useEffect(() => {
       localStorage.setItem('app_settings', JSON.stringify(settings));
       setGlobalVolume(settings.volume);
   }, [settings]);
   
+  // Reset nav visibility when changing modes
+  useEffect(() => {
+      setIsNavHidden(false);
+  }, [mode]);
+
   // Apply theme colors to CSS variables whenever mode changes
   useEffect(() => {
     const theme = THEMES[mode];
@@ -42,13 +50,13 @@ const App: React.FC = () => {
       case AppMode.CLOCK:
         return <ClockView settings={settings} />;
       case AppMode.ALARM:
-        return <AlarmView settings={settings} />;
+        return <AlarmView settings={settings} onEditModeChange={setIsNavHidden} />;
       case AppMode.TIMER:
         return <TimerView />;
       case AppMode.POMODORO:
         return <PomodoroView />;
       case AppMode.TASKS:
-        return <TasksView />;
+        return <TasksView onEditModeChange={setIsNavHidden} />;
       case AppMode.SETTINGS:
         return <SettingsView settings={settings} setSettings={setSettings} />;
       default:
@@ -64,11 +72,15 @@ const App: React.FC = () => {
         <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] rounded-full bg-secondary opacity-10 blur-[120px] delay-1000" />
       </div>
 
-      <main className="relative z-10 h-[calc(100vh-80px)] overflow-hidden">
+      {/* Main Content - z-10 */}
+      <main className={`relative z-10 overflow-hidden ${isNavHidden ? 'h-screen' : 'h-[calc(100vh-80px)]'} transition-all duration-300`}>
         {renderView()}
       </main>
 
-      <Nav currentMode={mode} setMode={setMode} />
+      {/* Navigation Wrapper - z-50 and Fixed to sit on top of Main */}
+      <div className={`fixed bottom-0 left-0 right-0 z-50 transition-transform duration-300 ${isNavHidden ? 'translate-y-full' : 'translate-y-0'}`}>
+          <Nav currentMode={mode} setMode={setMode} />
+      </div>
     </div>
   );
 };

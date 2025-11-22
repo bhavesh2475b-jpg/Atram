@@ -1,10 +1,14 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Task, Priority, TaskTag, PomodoroStat } from '../types';
-import { Plus, Trash2, Check, X, ArrowUpDown, Flag, Tag as TagIcon, BarChart2, List, Clock, CheckCircle2, TrendingUp, Timer } from 'lucide-react';
+import { Plus, Trash2, Check, X, ArrowUpDown, Flag, Tag as TagIcon, BarChart2, List, Clock, CheckCircle2, TrendingUp, Timer, Edit2 } from 'lucide-react';
 import { vibrate, HapticPatterns } from '../utils/haptics';
 
-export const TasksView: React.FC = () => {
+interface TasksViewProps {
+    onEditModeChange?: (isHidden: boolean) => void;
+}
+
+export const TasksView: React.FC<TasksViewProps> = ({ onEditModeChange }) => {
   const [tasks, setTasks] = useState<Task[]>(() => {
     const saved = localStorage.getItem('tasks');
     return saved ? JSON.parse(saved) : [];
@@ -13,6 +17,8 @@ export const TasksView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'list' | 'stats'>('list');
   const [pomoStats, setPomoStats] = useState<PomodoroStat[]>([]);
   
+  // Edit/New State
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [newTaskText, setNewTaskText] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<Priority>(Priority.MEDIUM);
   const [newTaskTag, setNewTaskTag] = useState<TaskTag>(TaskTag.OTHER);
@@ -24,6 +30,13 @@ export const TasksView: React.FC = () => {
   const [swipeId, setSwipeId] = useState<string | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const startX = useRef(0);
+
+  // Notify parent about input mode to toggle Nav visibility
+  useEffect(() => {
+    if (onEditModeChange) {
+      onEditModeChange(showInput);
+    }
+  }, [showInput, onEditModeChange]);
 
   useEffect(() => {
     localStorage.setItem('tasks', JSON.stringify(tasks));
@@ -45,25 +58,56 @@ export const TasksView: React.FC = () => {
     }
   }, [viewMode]);
 
-  const addTask = (e?: React.FormEvent) => {
+  const handleSave = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!newTaskText.trim()) return;
 
-    const newTask: Task = {
-      id: Date.now().toString(),
-      text: newTaskText.trim(),
-      completed: false,
-      priority: newTaskPriority,
-      tag: newTaskTag,
-      createdAt: Date.now(),
-      timeSpent: 0,
-    };
+    if (editingId) {
+        // Update existing task
+        setTasks(tasks.map(t => t.id === editingId ? {
+            ...t,
+            text: newTaskText.trim(),
+            priority: newTaskPriority,
+            tag: newTaskTag
+        } : t));
+        setEditingId(null);
+        setShowInput(false); // Close modal on edit save
+    } else {
+        // Create new task
+        const newTask: Task = {
+            id: Date.now().toString(),
+            text: newTaskText.trim(),
+            completed: false,
+            priority: newTaskPriority,
+            tag: newTaskTag,
+            createdAt: Date.now(),
+            timeSpent: 0,
+        };
+        setTasks([newTask, ...tasks]);
+        // Keep input open for rapid entry if adding new
+        inputRef.current?.focus();
+    }
 
-    setTasks([newTask, ...tasks]);
     setNewTaskText('');
     setNewTaskPriority(Priority.MEDIUM);
+    setNewTaskTag(TaskTag.OTHER);
     vibrate(HapticPatterns.success);
-    inputRef.current?.focus();
+  };
+
+  const openNewTask = () => {
+      setEditingId(null);
+      setNewTaskText('');
+      setNewTaskPriority(Priority.MEDIUM);
+      setNewTaskTag(TaskTag.OTHER);
+      setShowInput(true);
+  };
+
+  const openEditTask = (task: Task) => {
+      setEditingId(task.id);
+      setNewTaskText(task.text);
+      setNewTaskPriority(task.priority);
+      setNewTaskTag(task.tag);
+      setShowInput(true);
   };
 
   const toggleTask = (id: string) => {
@@ -193,7 +237,7 @@ export const TasksView: React.FC = () => {
       {/* View Content */}
       {viewMode === 'list' ? (
         /* --- LIST VIEW --- */
-        <div className="flex-1 overflow-y-auto no-scrollbar pb-32 space-y-2 overflow-x-hidden">
+        <div className="flex-1 overflow-y-auto no-scrollbar pb-56 space-y-2 overflow-x-hidden">
             {sortedTasks.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-64 text-onSurface/30">
                     <CheckCircle2 size={64} className="mb-4 opacity-50" />
@@ -234,7 +278,10 @@ export const TasksView: React.FC = () => {
                         <Check size={14} strokeWidth={4} />
                     </button>
                     
-                    <div className="flex-1 min-w-0 flex flex-col">
+                    <div 
+                        className="flex-1 min-w-0 flex flex-col cursor-pointer"
+                        onClick={() => openEditTask(task)}
+                    >
                         <div className="flex items-center gap-2 mb-0.5">
                         <p className={`text-lg font-medium truncate transition-all duration-200 ${
                             task.completed ? 'text-onSurface/40 line-through' : 'text-onSurface'
@@ -262,6 +309,13 @@ export const TasksView: React.FC = () => {
                             </div>
                         )}
                     </div>
+                    
+                    <button
+                        onClick={() => openEditTask(task)}
+                        className="p-2 rounded-full text-onSurface/30 hover:text-primary hover:bg-primary/10 transition-all"
+                    >
+                         <Edit2 size={18} />
+                    </button>
 
                     <button
                         onClick={() => deleteTask(task.id)}
@@ -351,19 +405,19 @@ export const TasksView: React.FC = () => {
         </div>
       )}
 
-      {/* Add Task Modal (Only in List View) */}
+      {/* Add/Edit Task Modal (Only in List View) */}
       {viewMode === 'list' && (
         showInput ? (
             <div 
-                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4"
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-end sm:items-center justify-center sm:p-4"
                 onClick={(e) => { if (e.target === e.currentTarget) setShowInput(false); }}
             >
             <form 
-                onSubmit={addTask}
-                className="bg-surface w-full max-w-lg sm:rounded-[2.5rem] rounded-t-[2.5rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 duration-200"
+                onSubmit={handleSave}
+                className="bg-surface w-full max-w-lg sm:rounded-[2.5rem] rounded-t-[2.5rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 duration-200 max-h-[90vh] overflow-y-auto no-scrollbar"
             >
                 <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-2xl font-medium text-onSurface">New Task</h3>
+                    <h3 className="text-2xl font-medium text-onSurface">{editingId ? 'Edit Task' : 'New Task'}</h3>
                     <button type="button" onClick={() => setShowInput(false)} className="p-2 rounded-full hover:bg-surfaceContainer text-onSurface/60">
                         <X size={24} />
                     </button>
@@ -419,16 +473,16 @@ export const TasksView: React.FC = () => {
                 <button 
                 type="submit"
                 disabled={!newTaskText.trim()}
-                className="w-full py-4 rounded-2xl bg-primary text-onPrimary font-bold shadow-lg disabled:opacity-50 disabled:shadow-none transition-all duration-200 active:scale-[0.98]"
+                className="w-full py-4 rounded-2xl bg-primary text-onPrimary font-bold shadow-lg disabled:opacity-50 disabled:shadow-none transition-all duration-200 active:scale-[0.98] mb-safe"
                 >
-                Add Task
+                {editingId ? 'Save Changes' : 'Add Task'}
                 </button>
             </form>
             </div>
         ) : (
             <button 
-            onClick={() => { setShowInput(true); vibrate(HapticPatterns.light); }}
-            className="fixed bottom-24 right-6 sm:right-auto sm:left-1/2 sm:-ml-10 w-20 h-20 rounded-[2rem] bg-primaryContainer text-onPrimaryContainer shadow-xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-200 z-40 group"
+            onClick={() => { openNewTask(); vibrate(HapticPatterns.light); }}
+            className="fixed bottom-32 right-6 sm:right-auto sm:left-1/2 sm:-ml-10 w-20 h-20 rounded-[2rem] bg-primaryContainer text-onPrimaryContainer shadow-xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-200 z-40 group"
             >
             <Plus size={36} className="group-hover:rotate-90 transition-transform duration-200" />
             </button>

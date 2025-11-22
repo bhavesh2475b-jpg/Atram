@@ -23,6 +23,7 @@ export interface Alarm {
   soundId: string;
   customSoundUrl?: string;
   customSoundName?: string;
+  color?: string;
 }
 
 export enum Priority {

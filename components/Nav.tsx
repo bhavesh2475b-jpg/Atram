@@ -25,8 +25,8 @@ export const Nav: React.FC<NavProps> = ({ currentMode, setMode }) => {
   };
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 p-4 z-50">
-      <div className="max-w-2xl mx-auto bg-surfaceContainer/90 backdrop-blur-xl rounded-[2rem] shadow-lg p-2 flex justify-between items-center border border-white/5">
+    <nav className="w-full p-4 pointer-events-none">
+      <div className="max-w-2xl mx-auto bg-surfaceContainer/90 backdrop-blur-xl rounded-[2rem] shadow-lg p-2 flex justify-between items-center border border-white/5 pointer-events-auto">
         {navItems.map((item) => {
           const isActive = currentMode === item.mode;
           const Icon = item.icon;
