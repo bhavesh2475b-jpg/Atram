@@ -5,11 +5,17 @@ export enum AppMode {
   TIMER = 'TIMER',
   POMODORO = 'POMODORO',
   TASKS = 'TASKS',
+  SETTINGS = 'SETTINGS',
+}
+
+export interface AppSettings {
+  is24Hour: boolean;
+  volume: number; // 0.0 to 1.0
 }
 
 export interface Alarm {
   id: string;
-  time: string; // HH:mm format
+  time: string; // HH:mm format (always stored as 24h)
   label: string;
   enabled: boolean;
   days: number[]; // 0-6 (Sun-Sat)
@@ -25,12 +31,22 @@ export enum Priority {
   LOW = 'LOW',
 }
 
+export enum TaskTag {
+  WORK = 'Work',
+  PERSONAL = 'Personal',
+  SHOPPING = 'Shopping',
+  HEALTH = 'Health',
+  OTHER = 'Other'
+}
+
 export interface Task {
   id: string;
   text: string;
   completed: boolean;
   priority: Priority;
+  tag: TaskTag;
   createdAt: number;
+  timeSpent?: number; // Accumulated focus time in minutes
 }
 
 export const SOUND_OPTIONS = [
@@ -43,6 +59,12 @@ export enum PomodoroMode {
   FOCUS = 'Focus',
   SHORT_BREAK = 'Short Break',
   LONG_BREAK = 'Long Break',
+}
+
+export interface PomodoroStat {
+  date: string; // YYYY-MM-DD
+  minutes: number;
+  sessions: number;
 }
 
 export interface ThemeColors {
@@ -100,5 +122,14 @@ export const THEMES: Record<AppMode, ThemeColors> = {
     surface: '#111411',
     onSurface: '#E1E3DF',
     surfaceContainer: '#1D211E',
+  },
+  [AppMode.SETTINGS]: {
+    primary: '#E6E0E9',
+    onPrimary: '#322F35',
+    primaryContainer: '#49454F',
+    onPrimaryContainer: '#E6E0E9',
+    surface: '#141218',
+    onSurface: '#E6E1E5',
+    surfaceContainer: '#211F26',
   },
 };

@@ -1,7 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
+import { AppSettings } from '../types';
 
-export const ClockView: React.FC = () => {
+interface ClockViewProps {
+  settings: AppSettings;
+}
+
+export const ClockView: React.FC<ClockViewProps> = ({ settings }) => {
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -9,7 +14,16 @@ export const ClockView: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  const hours = time.getHours().toString().padStart(2, '0');
+  // Format hours based on setting
+  let hours = time.getHours();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  
+  if (!settings.is24Hour) {
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+  }
+  
+  const hoursStr = hours.toString().padStart(2, '0');
   const minutes = time.getMinutes().toString().padStart(2, '0');
   const seconds = time.getSeconds().toString().padStart(2, '0');
   const dateString = time.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
@@ -39,8 +53,9 @@ export const ClockView: React.FC = () => {
 
       <div className="relative z-10 font-mono font-bold text-onSurface leading-none select-none tracking-tighter flex flex-col items-center">
          {/* Expressive Layout: Hours stacked on minutes for visual impact */}
-        <div className="text-[12rem] sm:text-[16rem] text-primary leading-[0.8] transition-colors duration-500">
-          {hours}
+        <div className="text-[12rem] sm:text-[16rem] text-primary leading-[0.8] transition-colors duration-500 relative">
+          {hoursStr}
+          {!settings.is24Hour && <span className="absolute top-4 -right-8 text-2xl font-sans font-bold text-onSurface/50 tracking-widest">{ampm}</span>}
         </div>
         <div className="text-[12rem] sm:text-[16rem] text-onSurface leading-[0.8]">
           {minutes}
@@ -57,7 +72,7 @@ export const ClockView: React.FC = () => {
       <div className="relative z-10 mt-16 flex gap-4">
         <div className="px-6 py-3 bg-surfaceContainer rounded-2xl flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-            <span className="text-onSurface font-medium">New York</span>
+            <span className="text-onSurface font-medium">Local Time</span>
         </div>
       </div>
     </div>

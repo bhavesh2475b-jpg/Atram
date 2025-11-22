@@ -1,15 +1,26 @@
 
 import React, { useState, useEffect } from 'react';
-import { AppMode, THEMES } from './types';
+import { AppMode, THEMES, AppSettings } from './types';
 import { Nav } from './components/Nav';
 import { ClockView } from './views/ClockView';
 import { AlarmView } from './views/AlarmView';
 import { TimerView } from './views/TimerView';
 import { PomodoroView } from './views/PomodoroView';
 import { TasksView } from './views/TasksView';
+import { SettingsView } from './views/SettingsView';
+import { setGlobalVolume } from './utils/sound';
 
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(AppMode.CLOCK);
+  const [settings, setSettings] = useState<AppSettings>(() => {
+      const saved = localStorage.getItem('app_settings');
+      return saved ? JSON.parse(saved) : { is24Hour: true, volume: 1.0 };
+  });
+
+  useEffect(() => {
+      localStorage.setItem('app_settings', JSON.stringify(settings));
+      setGlobalVolume(settings.volume);
+  }, [settings]);
   
   // Apply theme colors to CSS variables whenever mode changes
   useEffect(() => {
@@ -29,17 +40,19 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (mode) {
       case AppMode.CLOCK:
-        return <ClockView />;
+        return <ClockView settings={settings} />;
       case AppMode.ALARM:
-        return <AlarmView />;
+        return <AlarmView settings={settings} />;
       case AppMode.TIMER:
         return <TimerView />;
       case AppMode.POMODORO:
         return <PomodoroView />;
       case AppMode.TASKS:
         return <TasksView />;
+      case AppMode.SETTINGS:
+        return <SettingsView settings={settings} setSettings={setSettings} />;
       default:
-        return <ClockView />;
+        return <ClockView settings={settings} />;
     }
   };
 

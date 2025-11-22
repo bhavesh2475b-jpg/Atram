@@ -1,10 +1,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Alarm, SOUND_OPTIONS } from '../types';
+import { Alarm, SOUND_OPTIONS, AppSettings } from '../types';
 import { Plus, Trash2, BellOff, Music, Calendar as CalendarIcon, Repeat, ChevronLeft, ChevronRight } from 'lucide-react';
 import { playSound } from '../utils/sound';
+import { vibrate, HapticPatterns } from '../utils/haptics';
 
-export const AlarmView: React.FC = () => {
+interface AlarmViewProps {
+    settings: AppSettings;
+}
+
+export const AlarmView: React.FC<AlarmViewProps> = ({ settings }) => {
   const [alarms, setAlarms] = useState<Alarm[]>([
     { id: '1', time: '07:00', label: 'Morning Routine', enabled: true, days: [1, 2, 3, 4, 5], soundId: 'chime' },
     { id: '2', time: '08:30', label: 'Standup Meeting', enabled: false, days: [1, 2, 3, 4, 5], soundId: 'digital' }
@@ -18,25 +23,26 @@ export const AlarmView: React.FC = () => {
   
   // Schedule State
   const [scheduleMode, setScheduleMode] = useState<'weekly' | 'date'>('weekly');
-  const [newDays, setNewDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]); // Default to daily
-  const [specificDate, setSpecificDate] = useState<string | undefined>(undefined); // YYYY-MM-DD
+  const [newDays, setNewDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]); 
+  const [specificDate, setSpecificDate] = useState<string | undefined>(undefined); 
   
-  // Calendar State
   const [viewDate, setViewDate] = useState(new Date());
-
-  // Sound State
   const [selectedSound, setSelectedSound] = useState('digital');
   const [customSound, setCustomSound] = useState<{name: string, url: string} | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Alarm checking logic
+  // Swipe State
+  const [swipeId, setSwipeId] = useState<string | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const startX = useRef(0);
+
   useEffect(() => {
     const checkAlarms = setInterval(() => {
         const now = new Date();
         const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
         const currentSecond = now.getSeconds();
-        const currentDay = now.getDay(); // 0 = Sunday
+        const currentDay = now.getDay();
         
         const y = now.getFullYear();
         const m = String(now.getMonth() + 1).padStart(2, '0');
@@ -59,15 +65,13 @@ export const AlarmView: React.FC = () => {
                         shouldRing = true;
                     }
                 } else {
-                    // "Once" alarm (no days, no date) - implies next occurrence
                     shouldRing = true;
                 }
 
                 if (shouldRing) {
                     playSound(alarm.soundId, alarm.customSoundUrl);
-                    alert(`Alarm: ${alarm.label || 'Untitled'}`);
+                    alert(`Alarm: ${alarm.label || 'Untitled'}`); // In production, use notification/modal
                     
-                    // If it was a specific date alarm, disable it
                     if (alarm.specificDate) {
                         setAlarms(prev => prev.map(a => a.id === alarm.id ? { ...a, enabled: false } : a));
                     }
@@ -80,12 +84,40 @@ export const AlarmView: React.FC = () => {
 
   const toggleAlarm = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    vibrate(HapticPatterns.light);
     setAlarms(alarms.map(a => a.id === id ? { ...a, enabled: !a.enabled } : a));
   };
 
-  const deleteAlarm = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
+  const deleteAlarm = (id: string) => {
+    vibrate(HapticPatterns.medium);
     setAlarms(alarms.filter(a => a.id !== id));
+    setSwipeId(null);
+    setSwipeOffset(0);
+  };
+
+  // Swipe Handlers
+  const handleTouchStart = (e: React.TouchEvent, id: string) => {
+      startX.current = e.touches[0].clientX;
+      setSwipeId(id);
+      setSwipeOffset(0);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+      if (!swipeId) return;
+      const currentX = e.touches[0].clientX;
+      const diff = currentX - startX.current;
+      if (diff < 0) { 
+          setSwipeOffset(diff);
+      }
+  };
+
+  const handleTouchEnd = () => {
+      if (swipeOffset < -100 && swipeId) {
+          deleteAlarm(swipeId);
+      } else {
+          setSwipeOffset(0);
+          setSwipeId(null);
+      }
   };
 
   const openEditModal = (alarm: Alarm) => {
@@ -103,7 +135,6 @@ export const AlarmView: React.FC = () => {
     if (alarm.specificDate) {
         setScheduleMode('date');
         setSpecificDate(alarm.specificDate);
-        // Ensure calendar view is close to specific date
         setViewDate(new Date(alarm.specificDate));
     } else {
         setScheduleMode('weekly');
@@ -125,6 +156,7 @@ export const AlarmView: React.FC = () => {
   };
 
   const toggleDay = (dayIndex: number) => {
+    vibrate(HapticPatterns.tick);
     if (newDays.includes(dayIndex)) {
         setNewDays(newDays.filter(d => d !== dayIndex).sort());
     } else {
@@ -154,10 +186,18 @@ export const AlarmView: React.FC = () => {
     return days.map(d => dayNames[d]).join(', ');
   };
 
+  const formatDisplayTime = (timeStr: string) => {
+      if (settings.is24Hour) return timeStr;
+      const [h, m] = timeStr.split(':').map(Number);
+      const suffix = h >= 12 ? 'PM' : 'AM';
+      const displayH = h % 12 || 12;
+      return `${displayH}:${m.toString().padStart(2,'0')} ${suffix}`;
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2000000) { // Limit to ~2MB
+      if (file.size > 2000000) { 
         alert("File too large. Please select a sound under 2MB.");
         return;
       }
@@ -167,7 +207,7 @@ export const AlarmView: React.FC = () => {
           const url = event.target.result as string;
           setCustomSound({ name: file.name.split('.')[0], url });
           setSelectedSound('custom');
-          playSound('custom', url); // Preview
+          playSound('custom', url); 
         }
       };
       reader.readAsDataURL(file);
@@ -192,6 +232,7 @@ export const AlarmView: React.FC = () => {
       } else {
           setAlarms([...alarms, alarmData]);
       }
+      vibrate(HapticPatterns.success);
       setShowAdd(false);
   };
 
@@ -229,44 +270,55 @@ export const AlarmView: React.FC = () => {
         <span className="text-onSurface/50 text-sm font-medium bg-surfaceContainer px-3 py-1 rounded-full">{alarms.filter(a => a.enabled).length} Active</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-32 space-y-4">
-        {alarms.map(alarm => (
-            <div 
-                key={alarm.id} 
-                onClick={() => openEditModal(alarm)}
-                className={`group relative overflow-hidden rounded-[2rem] p-6 transition-all duration-500 ease-out hover:shadow-lg cursor-pointer active:scale-[0.98] ${alarm.enabled ? 'bg-surfaceContainer' : 'bg-surfaceContainer/30'}`}
-            >
-                <div className="flex justify-between items-center z-10 relative">
-                    <div className="flex flex-col">
-                        <span className={`text-6xl font-sans font-medium tracking-tight transition-colors ${alarm.enabled ? 'text-onSurface' : 'text-onSurface/40'}`}>
-                            {alarm.time}
-                        </span>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
-                          <span className="text-onSurface font-medium text-base">{alarm.label}</span>
-                          <div className="flex items-center gap-1 text-onSurface/60 text-sm">
-                             {alarm.soundId !== 'digital' && <Music size={14} className="text-primary" />}
-                             <span>•</span>
-                             <span className={alarm.specificDate ? 'text-primary font-bold' : ''}>{getRepeatLabel(alarm)}</span>
-                          </div>
+      <div className="flex-1 overflow-y-auto no-scrollbar pb-32 space-y-4 overflow-x-hidden">
+        {alarms.map(alarm => {
+            const isSwiping = swipeId === alarm.id;
+            return (
+            <div key={alarm.id} className="relative">
+                <div className="absolute inset-0 bg-error rounded-[2rem] flex items-center justify-end px-8 mb-4">
+                    <Trash2 className="text-onError" size={24} />
+                </div>
+
+                <div 
+                    onClick={() => openEditModal(alarm)}
+                    onTouchStart={(e) => handleTouchStart(e, alarm.id)}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    style={{ transform: isSwiping ? `translateX(${swipeOffset}px)` : 'translateX(0)' }}
+                    className={`group relative z-10 overflow-hidden rounded-[2rem] p-6 transition-all duration-300 ease-out hover:shadow-lg cursor-pointer active:scale-[0.98] mb-4 ${alarm.enabled ? 'bg-surfaceContainer' : 'bg-surfaceContainer/30'}`}
+                >
+                    <div className="flex justify-between items-center">
+                        <div className="flex flex-col">
+                            <span className={`text-5xl sm:text-6xl font-sans font-medium tracking-tight transition-colors ${alarm.enabled ? 'text-onSurface' : 'text-onSurface/40'}`}>
+                                {formatDisplayTime(alarm.time)}
+                            </span>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
+                            <span className="text-onSurface font-medium text-base">{alarm.label}</span>
+                            <div className="flex items-center gap-1 text-onSurface/60 text-sm">
+                                {alarm.soundId !== 'digital' && <Music size={14} className="text-primary" />}
+                                <span>•</span>
+                                <span className={alarm.specificDate ? 'text-primary font-bold' : ''}>{getRepeatLabel(alarm)}</span>
+                            </div>
+                            </div>
                         </div>
+                        
+                        <button 
+                            onClick={(e) => toggleAlarm(e, alarm.id)}
+                            className={`w-16 h-9 sm:w-20 sm:h-10 rounded-full relative transition-colors duration-300 shrink-0 ${alarm.enabled ? 'bg-primary' : 'bg-onSurface/10'}`}
+                        >
+                            <div className={`absolute top-1 h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-white shadow-md transition-all duration-300 cubic-bezier(0.34, 1.56, 0.64, 1) ${alarm.enabled ? 'left-[calc(100%-2rem)] sm:left-11' : 'left-1'}`} />
+                        </button>
                     </div>
                     
                     <button 
-                        onClick={(e) => toggleAlarm(e, alarm.id)}
-                        className={`w-20 h-10 rounded-full relative transition-colors duration-300 shrink-0 ${alarm.enabled ? 'bg-primary' : 'bg-onSurface/10'}`}
+                        onClick={(e) => { e.stopPropagation(); deleteAlarm(alarm.id); }}
+                        className="absolute top-4 right-4 p-3 rounded-full text-onSurface/20 hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all duration-300 z-20 hidden sm:block"
                     >
-                        <div className={`absolute top-1 h-8 w-8 rounded-full bg-white shadow-md transition-all duration-300 cubic-bezier(0.34, 1.56, 0.64, 1) ${alarm.enabled ? 'left-11' : 'left-1'}`} />
+                        <Trash2 size={20} />
                     </button>
                 </div>
-                
-                <button 
-                    onClick={(e) => deleteAlarm(e, alarm.id)}
-                    className="absolute top-4 right-4 p-3 rounded-full text-onSurface/20 hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all duration-300 z-20"
-                >
-                    <Trash2 size={20} />
-                </button>
             </div>
-        ))}
+        )})}
 
         {alarms.length === 0 && (
             <div className="flex flex-col items-center justify-center h-64 text-onSurface/30 animate-pulse">
@@ -277,7 +329,6 @@ export const AlarmView: React.FC = () => {
         )}
       </div>
 
-      {/* Floating Action Button */}
       <button 
         onClick={openNewModal}
         className="fixed bottom-24 right-6 sm:right-auto sm:left-1/2 sm:-ml-10 w-20 h-20 rounded-[2rem] bg-primaryContainer text-onPrimaryContainer shadow-xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-300 z-40 group"
@@ -305,7 +356,7 @@ export const AlarmView: React.FC = () => {
                       {/* Label Input */}
                       <input 
                         type="text" 
-                        placeholder="Label (e.g., Work)"
+                        placeholder="Label"
                         value={newLabel}
                         onChange={(e) => setNewLabel(e.target.value)}
                         className="w-full bg-surfaceContainer text-onSurface p-4 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-primary transition-all"
@@ -345,7 +396,6 @@ export const AlarmView: React.FC = () => {
                                     </button>
                                 ))}
                              </div>
-                             {/* Range Presets */}
                              <div className="flex gap-2">
                                 <button onClick={() => setDaysRange('weekdays')} className="px-3 py-1 rounded-lg bg-surfaceContainer/50 text-xs font-medium text-onSurface hover:bg-surfaceContainer">Weekdays</button>
                                 <button onClick={() => setDaysRange('weekends')} className="px-3 py-1 rounded-lg bg-surfaceContainer/50 text-xs font-medium text-onSurface hover:bg-surfaceContainer">Weekends</button>
@@ -364,26 +414,17 @@ export const AlarmView: React.FC = () => {
                                   </span>
                                   <button onClick={() => changeMonth(1)} className="p-1 hover:bg-onSurface/10 rounded-full"><ChevronRight size={20} /></button>
                               </div>
-                              
-                              <div className="grid grid-cols-7 gap-1 text-center mb-2">
-                                  {['S','M','T','W','T','F','S'].map(d => <span key={d} className="text-xs font-bold text-onSurface/40">{d}</span>)}
-                              </div>
-                              
                               <div className="grid grid-cols-7 gap-1 place-items-center">
                                   {getCalendarDays(viewDate.getFullYear(), viewDate.getMonth()).map((day, i) => {
                                       if (!day) return <div key={i} />;
-                                      
                                       const dateStr = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                                       const isSelected = specificDate === dateStr;
-                                      const isToday = new Date().toDateString() === new Date(viewDate.getFullYear(), viewDate.getMonth(), day).toDateString();
-                                      
                                       return (
                                           <button
                                             key={i}
                                             onClick={() => handleDateClick(day)}
                                             className={`w-8 h-8 rounded-full text-sm flex items-center justify-center transition-all ${
                                                 isSelected ? 'bg-primary text-onPrimary font-bold shadow-md scale-110' : 
-                                                isToday ? 'bg-surfaceContainer text-primary font-bold border border-primary' :
                                                 'text-onSurface hover:bg-onSurface/10'
                                             }`}
                                           >
@@ -391,11 +432,6 @@ export const AlarmView: React.FC = () => {
                                           </button>
                                       );
                                   })}
-                              </div>
-                              <div className="text-center mt-3 min-h-[20px]">
-                                  <span className="text-sm text-primary font-medium">
-                                      {specificDate ? new Date(specificDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) : 'Select a date'}
-                                  </span>
                               </div>
                           </div>
                       )}
