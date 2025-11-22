@@ -25,8 +25,8 @@ export const Nav: React.FC<NavProps> = ({ currentMode, setMode }) => {
   };
 
   return (
-    <nav className="w-full p-4 pointer-events-none">
-      <div className="max-w-2xl mx-auto bg-surfaceContainer/90 backdrop-blur-xl rounded-[2rem] shadow-lg p-2 flex justify-between items-center border border-white/5 pointer-events-auto">
+    <nav className="w-full p-4 pb-6 pointer-events-none">
+      <div className="max-w-2xl mx-auto bg-surfaceContainer/80 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl p-3 flex justify-between items-center border border-white/5 pointer-events-auto">
         {navItems.map((item) => {
           const isActive = currentMode === item.mode;
           const Icon = item.icon;
@@ -34,14 +34,19 @@ export const Nav: React.FC<NavProps> = ({ currentMode, setMode }) => {
             <button
               key={item.mode}
               onClick={() => handlePress(item.mode)}
-              className={`relative flex flex-col items-center justify-center w-full h-16 rounded-[1.5rem] transition-all duration-300 ${
-                isActive ? 'bg-primaryContainer text-onPrimaryContainer' : 'text-onSurface/60 hover:text-onSurface hover:bg-white/5'
-              }`}
+              className="group relative flex flex-col items-center justify-center w-full h-14"
             >
-              <span className={`transform transition-transform duration-300 ${isActive ? '-translate-y-1' : 'translate-y-0'}`}>
-                <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+              {/* Active Indicator Pill */}
+              <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-8 rounded-full transition-all duration-500 ease-spring ${
+                isActive ? 'bg-primaryContainer scale-100' : 'bg-transparent scale-0'
+              }`} />
+
+              <span className={`relative z-10 transition-colors duration-300 ${isActive ? 'text-onPrimaryContainer' : 'text-onSurface/50 group-hover:text-onSurface'}`}>
+                <Icon size={24} strokeWidth={isActive ? 2.5 : 2} />
               </span>
-              <span className={`text-[9px] font-medium mt-1 absolute bottom-2 opacity-0 transition-opacity duration-300 ${isActive ? 'opacity-100' : ''}`}>
+              
+              {/* Optional Label - Hidden for purely expressive icon look, or minimal */}
+              <span className={`text-[10px] font-bold mt-8 absolute opacity-0 transition-all duration-300 ${isActive ? 'translate-y-0 opacity-0' : 'translate-y-2 opacity-0'}`}>
                 {item.label}
               </span>
             </button>

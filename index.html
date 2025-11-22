@@ -29,16 +29,26 @@
               surface: 'var(--color-surface)',
               onSurface: 'var(--color-on-surface)',
               surfaceContainer: 'var(--color-surface-container)',
+              surfaceContainerHigh: 'var(--color-surface-container-high)',
             },
             animation: {
-              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-              'breathe': 'breathe 4s ease-in-out infinite',
+              'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'breathe': 'breathe 6s ease-in-out infinite',
+              'float': 'float 6s ease-in-out infinite',
             },
             keyframes: {
               breathe: {
                 '0%, 100%': { transform: 'scale(1)' },
-                '50%': { transform: 'scale(1.1)' },
+                '50%': { transform: 'scale(1.05)' },
+              },
+              float: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-10px)' },
               }
+            },
+            transitionTimingFunction: {
+              'expressive': 'cubic-bezier(0.2, 0.0, 0, 1.0)', // Standard Material 3 easing
+              'spring': 'cubic-bezier(0.175, 0.885, 0.32, 1.275)',
             }
           }
         }
@@ -48,7 +58,7 @@
       /* Base Transitions */
       body {
         background-color: #121212; /* Dark mode default base */
-        transition: background-color 0.3s ease, color 0.3s ease;
+        transition: background-color 0.5s cubic-bezier(0.2, 0, 0, 1), color 0.5s cubic-bezier(0.2, 0, 0, 1);
         overscroll-behavior-y: none; /* Prevent pull-to-refresh on mobile */
       }
       
@@ -59,6 +69,10 @@
       .no-scrollbar {
         -ms-overflow-style: none; 
         scrollbar-width: none; 
+      }
+      
+      .mb-safe {
+        margin-bottom: env(safe-area-inset-bottom);
       }
     </style>
   <script type="importmap">

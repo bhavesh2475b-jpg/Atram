@@ -1,11 +1,12 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PomodoroMode, PomodoroStat, Task } from '../types';
 import { Play, Pause, RotateCcw, Coffee, Brain, Armchair, Settings, X, BarChart3, Timer, Flame, Trophy, Lightbulb, ListTodo, Save, CheckCircle2 } from 'lucide-react';
 import { playNotificationSound } from '../utils/sound';
 import { vibrate, HapticPatterns } from '../utils/haptics';
 
 export const PomodoroView: React.FC = () => {
+  // --- STATE INITIALIZATION ---
   const [durations, setDurations] = useState<Record<PomodoroMode, number>>(() => {
     const saved = localStorage.getItem('pomodoro_durations');
     return saved ? JSON.parse(saved) : {
@@ -27,49 +28,88 @@ export const PomodoroView: React.FC = () => {
     return saved ? parseInt(saved) : 4;
   });
 
-  // Task Integration
   const [availableTasks, setAvailableTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [showTaskSelector, setShowTaskSelector] = useState(false);
+  const [viewMode, setViewMode] = useState<'timer' | 'stats'>('timer');
+  const [showSettings, setShowSettings] = useState(false);
 
+  // Timer State
   const [mode, setMode] = useState<PomodoroMode>(PomodoroMode.FOCUS);
   const [timeLeft, setTimeLeft] = useState(durations[PomodoroMode.FOCUS] * 60);
   const [isActive, setIsActive] = useState(false);
   const [cycle, setCycle] = useState(1);
-  const [showSettings, setShowSettings] = useState(false);
-  const [viewMode, setViewMode] = useState<'timer' | 'stats'>('timer');
+  
+  // Ref to track the end timestamp for background accuracy
+  const endTimeRef = useRef<number | null>(null);
 
-  // Load tasks on mount and when viewMode changes (to refresh if tasks were added)
+  // --- PERSISTENCE & RESTORATION LOGIC ---
+
+  // Restore Timer State on Mount
   useEffect(() => {
-    const loadTasks = () => {
-        const savedTasks = localStorage.getItem('tasks');
-        if (savedTasks) {
-            const parsed: Task[] = JSON.parse(savedTasks);
-            setAvailableTasks(parsed.filter(t => !t.completed)); // Only show active tasks
+    const savedState = localStorage.getItem('pomodoro_state');
+    if (savedState) {
+        const parsed = JSON.parse(savedState);
+        setMode(parsed.mode);
+        setCycle(parsed.cycle);
+        setSelectedTaskId(parsed.selectedTaskId || null);
+        
+        if (parsed.isActive && parsed.endTime) {
+            const now = Date.now();
+            const remaining = Math.ceil((parsed.endTime - now) / 1000);
+            
+            if (remaining > 0) {
+                // Resume active timer
+                setTimeLeft(remaining);
+                setIsActive(true);
+                endTimeRef.current = parsed.endTime;
+            } else {
+                // Timer finished while away
+                handleTimerComplete(parsed.mode, parsed.cycle, parsed.selectedTaskId);
+                setIsActive(false);
+                setTimeLeft(0);
+                endTimeRef.current = null;
+                // Clear invalid state
+                localStorage.removeItem('pomodoro_state');
+            }
+        } else {
+            // Restore paused state
+            setIsActive(false);
+            setTimeLeft(parsed.timeLeft);
         }
+    }
+    // Load Tasks
+    const savedTasks = localStorage.getItem('tasks');
+    if (savedTasks) {
+        const parsed: Task[] = JSON.parse(savedTasks);
+        setAvailableTasks(parsed.filter(t => !t.completed));
+    }
+  }, []);
+
+  // Save Timer State whenever it changes
+  useEffect(() => {
+    const state = {
+        mode,
+        timeLeft,
+        isActive,
+        endTime: endTimeRef.current,
+        cycle,
+        selectedTaskId
     };
-    loadTasks();
-  }, [viewMode]);
+    localStorage.setItem('pomodoro_state', JSON.stringify(state));
+  }, [mode, timeLeft, isActive, cycle, selectedTaskId]);
 
-  useEffect(() => {
-    localStorage.setItem('pomodoro_durations', JSON.stringify(durations));
-  }, [durations]);
+  // Persist Settings
+  useEffect(() => { localStorage.setItem('pomodoro_durations', JSON.stringify(durations)); }, [durations]);
+  useEffect(() => { localStorage.setItem('pomodoro_cycles', cyclesBeforeLongBreak.toString()); }, [cyclesBeforeLongBreak]);
+  useEffect(() => { localStorage.setItem('pomodoro_stats', JSON.stringify(stats)); }, [stats]);
 
-  useEffect(() => {
-    localStorage.setItem('pomodoro_cycles', cyclesBeforeLongBreak.toString());
-  }, [cyclesBeforeLongBreak]);
 
-  useEffect(() => {
-    localStorage.setItem('pomodoro_stats', JSON.stringify(stats));
-  }, [stats]);
+  // --- TIMER LOGIC ---
 
-  const config = {
-    [PomodoroMode.FOCUS]: { color: 'bg-primaryContainer', icon: Brain },
-    [PomodoroMode.SHORT_BREAK]: { color: 'bg-emerald-800', icon: Coffee },
-    [PomodoroMode.LONG_BREAK]: { color: 'bg-blue-800', icon: Armchair },
-  };
+  const logSession = (minutes: number, currentMode: PomodoroMode, taskId: string | null) => {
+    if (currentMode !== PomodoroMode.FOCUS) return;
 
-  const logSession = (minutes: number) => {
     const today = new Date().toISOString().split('T')[0];
     
     // 1. Update Global Stats
@@ -83,68 +123,96 @@ export const PomodoroView: React.FC = () => {
             } : s);
         }
         const newStats = [...prev, { date: today, minutes, sessions: 1 }];
-        return newStats.slice(-30); // Keep last 30 days
+        return newStats.slice(-30);
     });
 
-    // 2. Update Specific Task Time
-    if (selectedTaskId && mode === PomodoroMode.FOCUS) {
+    // 2. Update Task Time
+    if (taskId) {
         const savedTasks = localStorage.getItem('tasks');
         if (savedTasks) {
             const allTasks: Task[] = JSON.parse(savedTasks);
             const updatedTasks = allTasks.map(t => {
-                if (t.id === selectedTaskId) {
+                if (t.id === taskId) {
                     return { ...t, timeSpent: (t.timeSpent || 0) + minutes };
                 }
                 return t;
             });
             localStorage.setItem('tasks', JSON.stringify(updatedTasks));
-            // Update local state to reflect change if needed
             setAvailableTasks(updatedTasks.filter(t => !t.completed));
         }
     }
   };
 
+  const handleTimerComplete = (currentMode: PomodoroMode, currentCycle: number, taskId: string | null) => {
+      playNotificationSound();
+      vibrate(HapticPatterns.success);
+      
+      if (currentMode === PomodoroMode.FOCUS) {
+          // Log the session using the configured duration
+          // Note: We use durations state, but if restored from background, strictly we should use the duration from when it started.
+          // For simplicity, we assume settings haven't changed mid-timer.
+          const mins = durations[PomodoroMode.FOCUS]; 
+          logSession(mins, currentMode, taskId);
+          setCycle(c => c < cyclesBeforeLongBreak ? c + 1 : 1);
+      }
+  };
+
+  // The Interval Loop
   useEffect(() => {
     let interval: number | undefined;
-    if (isActive && timeLeft > 0) {
+    
+    if (isActive && endTimeRef.current) {
       interval = window.setInterval(() => {
-        setTimeLeft((prev) => {
-            if (prev <= 1) {
-                playNotificationSound();
-                vibrate(HapticPatterns.success);
-                setIsActive(false);
-                
-                if (mode === PomodoroMode.FOCUS) {
-                    logSession(durations[PomodoroMode.FOCUS]);
-                    setCycle(c => c < cyclesBeforeLongBreak ? c + 1 : 1);
-                }
-                return 0;
-            }
-            return prev - 1;
-        });
-      }, 1000);
-    } else if (timeLeft === 0 && isActive) {
-      setIsActive(false);
+        const now = Date.now();
+        const remaining = Math.ceil((endTimeRef.current! - now) / 1000);
+
+        if (remaining <= 0) {
+            // Timer Finished
+            setTimeLeft(0);
+            setIsActive(false);
+            endTimeRef.current = null;
+            handleTimerComplete(mode, cycle, selectedTaskId);
+            localStorage.removeItem('pomodoro_state'); // Clear active state
+        } else {
+            setTimeLeft(remaining);
+        }
+      }, 200); // Check more frequently for smoothness, logic relies on timestamp
     }
+
     return () => clearInterval(interval);
-  }, [isActive, timeLeft, mode, durations, cyclesBeforeLongBreak, selectedTaskId]);
+  }, [isActive, mode, cycle, selectedTaskId, durations, cyclesBeforeLongBreak]);
+
+
+  // --- CONTROLS ---
+
+  const toggleTimer = () => {
+      vibrate(HapticPatterns.medium);
+      if (isActive) {
+          // Pause: Calculate remaining time and clear target
+          setIsActive(false);
+          endTimeRef.current = null;
+      } else {
+          // Start: Set target based on current timeLeft
+          const target = Date.now() + (timeLeft * 1000);
+          endTimeRef.current = target;
+          setIsActive(true);
+      }
+  };
 
   const switchMode = (newMode: PomodoroMode) => {
       setMode(newMode);
       setIsActive(false);
+      endTimeRef.current = null;
       setTimeLeft(durations[newMode] * 60);
       vibrate(HapticPatterns.light);
-  };
-
-  const toggleTimer = () => {
-      setIsActive(!isActive);
-      vibrate(HapticPatterns.medium);
   };
   
   const resetTimer = () => {
       setIsActive(false);
+      endTimeRef.current = null;
       setTimeLeft(durations[mode] * 60);
       vibrate(HapticPatterns.medium);
+      localStorage.removeItem('pomodoro_state');
   };
 
   const saveProgress = () => {
@@ -153,21 +221,17 @@ export const PomodoroView: React.FC = () => {
       const elapsedMinutes = Math.floor(elapsedSeconds / 60);
 
       if (elapsedMinutes >= 1) {
-          logSession(elapsedMinutes);
+          logSession(elapsedMinutes, mode, selectedTaskId);
           vibrate(HapticPatterns.success);
           alert(`Saved ${elapsedMinutes} minutes of focus.`);
       } else {
           alert("Session too short to save (min 1 minute).");
       }
-      
       resetTimer();
   };
 
   const handleDurationChange = (targetMode: PomodoroMode, value: number) => {
-      setDurations(prev => ({
-          ...prev,
-          [targetMode]: value
-      }));
+      setDurations(prev => ({ ...prev, [targetMode]: value }));
       if (targetMode === mode && !isActive) {
           setTimeLeft(value * 60);
       }
@@ -179,7 +243,13 @@ export const PomodoroView: React.FC = () => {
     return `${m}:${s}`;
   };
 
-  // Stats Calculations
+  const config = {
+    [PomodoroMode.FOCUS]: { color: 'bg-primaryContainer', icon: Brain },
+    [PomodoroMode.SHORT_BREAK]: { color: 'bg-emerald-800', icon: Coffee },
+    [PomodoroMode.LONG_BREAK]: { color: 'bg-blue-800', icon: Armchair },
+  };
+
+  // --- STATS MEMO ---
   const weeklyData = useMemo(() => {
       const days = [];
       const today = new Date();
@@ -215,10 +285,10 @@ export const PomodoroView: React.FC = () => {
   const selectedTask = availableTasks.find(t => t.id === selectedTaskId);
 
   return (
-    <div className="h-full flex flex-col items-center p-6 w-full max-w-md mx-auto animate-in zoom-in-95 duration-500 relative">
+    <div className="min-h-full w-full max-w-md mx-auto p-6 flex flex-col items-center animate-in zoom-in-95 duration-500 relative pb-32">
       
       {/* Header Controls */}
-      <div className="w-full flex justify-between items-center mb-4">
+      <div className="w-full flex justify-between items-center mb-4 shrink-0">
           <h2 className="text-2xl font-bold text-onSurface transition-all">
               {viewMode === 'timer' ? 'Focus Timer' : 'Weekly Stats'}
           </h2>
@@ -244,7 +314,7 @@ export const PomodoroView: React.FC = () => {
         /* --- TIMER VIEW --- */
         <div className="w-full flex flex-col items-center animate-in slide-in-from-left-8 duration-300">
             {/* Mode Switcher Pills */}
-            <div className="flex bg-surfaceContainer rounded-[2rem] p-2 mb-4 w-full relative h-16 shadow-inner">
+            <div className="flex bg-surfaceContainer rounded-[2rem] p-2 mb-4 w-full relative h-16 shadow-inner shrink-0">
                 <div 
                     className="absolute top-2 bottom-2 rounded-[1.5rem] bg-primary transition-all duration-500 cubic-bezier(0.34, 1.56, 0.64, 1)"
                     style={{
@@ -268,7 +338,7 @@ export const PomodoroView: React.FC = () => {
             {mode === PomodoroMode.FOCUS && (
                 <button 
                     onClick={() => { setShowTaskSelector(true); vibrate(HapticPatterns.light); }}
-                    className={`mb-6 px-4 py-2 rounded-full flex items-center gap-2 transition-all max-w-[90%] ${selectedTask ? 'bg-secondary/10 text-secondary border border-secondary/20' : 'bg-surfaceContainer text-onSurface/50 hover:bg-surfaceContainer/80'}`}
+                    className={`mb-6 px-4 py-2 rounded-full flex items-center gap-2 transition-all max-w-[90%] shrink-0 ${selectedTask ? 'bg-secondary/10 text-secondary border border-secondary/20' : 'bg-surfaceContainer text-onSurface/50 hover:bg-surfaceContainer/80'}`}
                 >
                     {selectedTask ? <CheckCircle2 size={16} className="shrink-0" /> : <ListTodo size={16} className="shrink-0" />}
                     <span className="truncate font-medium text-sm">
@@ -280,7 +350,7 @@ export const PomodoroView: React.FC = () => {
 
             {/* Timer Display Card */}
             <div className={`w-full aspect-[4/5] rounded-[3.5rem] ${config[mode].color} transition-all duration-700 ease-in-out flex flex-col items-center justify-center relative overflow-hidden shadow-2xl ring-8 ring-surfaceContainer/50`}>
-                <div className="absolute inset-0 opacity-20">
+                <div className="absolute inset-0 opacity-20 pointer-events-none">
                     <div className="absolute -top-20 -right-20 w-80 h-80 bg-white rounded-full blur-[80px] animate-pulse-slow"></div>
                     <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-black rounded-full blur-[80px] animate-pulse-slow delay-700"></div>
                 </div>
@@ -290,7 +360,7 @@ export const PomodoroView: React.FC = () => {
                         <ModeIcon size={48} className="text-onPrimaryContainer opacity-90" />
                     </div>
                     
-                    <div className="text-[7rem] font-mono font-bold text-onPrimaryContainer tracking-tighter leading-none mb-6 drop-shadow-sm">
+                    <div className="text-[6rem] sm:text-[7rem] font-mono font-bold text-onPrimaryContainer tracking-tighter leading-none mb-6 drop-shadow-sm">
                         {formatTime(timeLeft)}
                     </div>
                     
@@ -305,7 +375,7 @@ export const PomodoroView: React.FC = () => {
                 </div>
 
                 {/* Controls */}
-                <div className="absolute bottom-10 flex gap-6 z-20 items-center">
+                <div className="absolute bottom-8 flex gap-6 z-20 items-center">
                     {!isActive && timeLeft !== durations[mode] * 60 ? (
                          /* Paused State Controls */
                         <>
@@ -333,7 +403,7 @@ export const PomodoroView: React.FC = () => {
         </div>
       ) : (
         /* --- STATS VIEW --- */
-        <div className="w-full flex flex-col gap-4 animate-in slide-in-from-right-8 duration-300 overflow-y-auto pb-20 no-scrollbar">
+        <div className="w-full flex flex-col gap-4 animate-in slide-in-from-right-8 duration-300">
             
             {/* Overview Cards */}
             <div className="grid grid-cols-2 gap-4">
@@ -411,7 +481,7 @@ export const PomodoroView: React.FC = () => {
             onClick={() => setShowTaskSelector(false)}
         >
             <div 
-                className="bg-surface w-full max-w-sm rounded-t-[2.5rem] sm:rounded-[2.5rem] p-6 animate-in slide-in-from-bottom-10 max-h-[70vh] overflow-y-auto no-scrollbar"
+                className="bg-surface w-full max-w-sm rounded-t-[2.5rem] sm:rounded-[2.5rem] p-6 animate-in slide-in-from-bottom-10 max-h-[70vh] overflow-y-auto no-scrollbar shadow-2xl"
                 onClick={e => e.stopPropagation()}
             >
                 <div className="flex justify-between items-center mb-6">
